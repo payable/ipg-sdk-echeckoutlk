@@ -399,7 +399,9 @@ If the customer made the payment by VISA or MASTER credit/debit card, following 
 
 Format:
 
+```
 UPPERCASE(SHA512[<merchantKey>|<echeckoutOrderId>|<echeckoutTransactionId>|<echeckoutAmount>|<echeckoutCurrency>|<invoiceId>|<statusCode>|UPPERCASE(SHA512[<MerchantToken>])])
+```
 
 ##### Send response to callback
 

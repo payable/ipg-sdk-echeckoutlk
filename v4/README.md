@@ -350,7 +350,7 @@ eCheckoutLK Payment Gateway will send back to your website notifies the payment 
 - It cannot test the payment notification on localhost. You need to submit a publicly accessible IP or
   domain based URL as your `notifyUrl` is to directly notify your server.
 
-##### Server callback Json
+##### Server callback Json (One-time Payment)
 
 ```json
 {
@@ -403,6 +403,12 @@ Format:
 UPPERCASE(SHA512[<merchantKey>|<echeckoutOrderId>|<echeckoutTransactionId>|<echeckoutAmount>|<echeckoutCurrency>|<invoiceId>|<statusCode>|UPPERCASE(SHA512[<MerchantToken>])])
 ```
 
+**Important Notes:**
+
+- `merchantToken` is a secret shared by eCheckoutLK for your merchant
+- Use exact field order and string concatenation with `|` as delimiter
+- Compare your locally computed checkValue with the webhook's value (case-sensitive match)
+
 ##### Send response to callback
 
 ```json
@@ -410,6 +416,113 @@ UPPERCASE(SHA512[<merchantKey>|<echeckoutOrderId>|<echeckoutTransactionId>|<eche
   "Status": 200
 }
 ```
+
+#### Server Callbacks (Webhooks) for Recurring Payments
+
+For recurring payments (`paymentType=2`), callbacks are sent to your `notifyUrl` for:
+
+- Initial payment attempt
+- Every recurring cycle
+- Retry attempts (if enabled)
+
+##### Recurring Payment Callback - Initial Attempt
+
+```json
+{
+  "merchantKey": "SXXXXXXXX",
+  "echeckoutOrderId": "oid-XXXXXXXX-XXX-XXXX-XXXX-XXXX",
+  "echeckoutTransactionId": "XXXXXXXX-XXX-XXXX-XXXX-XXXXXXXXX",
+  "echeckoutAmount": "1000.60",
+  "echeckoutCurrency": "LKR",
+  "invoiceNo": "INVvw5EA0d1pH",
+  "statusCode": 1,
+  "statusMessage": "SUCCESS",
+  "paymentType": 2,
+  "paymentMethod": 1,
+  "paymentScheme": "MASTERCARD",
+  "custom1": "test 1",
+  "custom2": "test 2",
+  "cardHolderName": "Shakthi",
+  "cardNumber": "512345xxxxxx0008",
+  "recurring": {
+    "subscriptionId": "XXXXXXXX-XXX-XXXX-XXXX-XXXXXXXXX",
+    "recurringAmount": "1000.60",
+    "startDate": "2025-09-03",
+    "endDate": "FOREVER",
+    "interval": "MONTHLY",
+    "isRetry": 1,
+    "retryAttempts": 3,
+    "doFirstPayment": 1,
+    "nextPaymentDate": "2025-10-03",
+    "noOfSuccessPayments": 1,
+    "subscriptionStatusCode": 1
+  },
+  "checkValue": "256XXXXXXXXXXXXXX"
+}
+```
+
+##### Recurring Payment Callback - Recurring/Retry Attempt
+
+```json
+{
+  "merchantKey": "SXXXXXXXX",
+  "echeckoutOrderId": "oid-XXXXXXXX-XXX-XXXX-XXXX-XXXX",
+  "echeckoutTransactionId": "XXXXXXXX-XXX-XXXX-XXXX-XXXXXXXXX",
+  "echeckoutAmount": "1000.60",
+  "echeckoutCurrency": "LKR",
+  "invoiceNo": "INVvw5EA0d1pH",
+  "statusCode": 1,
+  "statusMessage": "SUCCESS",
+  "paymentType": 2,
+  "paymentMethod": 1,
+  "paymentScheme": "MASTERCARD",
+  "custom1": "test 1",
+  "custom2": "test 2",
+  "cardHolderName": "Shakthi",
+  "cardNumber": "512345xxxxxx0008",
+  "recurring": {
+    "subscriptionId": "XXXXXXXX-XXX-XXXX-XXXX-XXXXXXXXX",
+    "recurringAmount": "1000.60",
+    "startDate": "2025-09-03",
+    "endDate": "FOREVER",
+    "interval": "MONTHLY",
+    "isRetry": 1,
+    "retryAttempts": 3,
+    "doFirstPayment": 1,
+    "nextPaymentDate": "2025-11-03",
+    "noOfSuccessPayments": 2,
+    "subscriptionStatusCode": 1,
+    "lastPaymentAttempt": {
+      "isRetried": 1,
+      "attemptCount": 2,
+      "txDateTime": "2025-10-05T10:22:31+05:30",
+      "attemptStatus": "SUCCESS",
+      "transactionId": "XXXXXXXX-XXX-XXXX-XXXX-XXXXXXXXX"
+    }
+  },
+  "checkValue": "256XXXXXXXXXXXXXX"
+}
+```
+
+##### Recurring Callback Fields
+
+**Core Fields:**
+
+- `subscriptionId` - Unique subscription identifier
+- `recurringAmount` - Amount charged per cycle
+- `startDate` - Subscription start date
+- `endDate` - Subscription end date (or "FOREVER")
+- `interval` - Billing interval (MONTHLY/ANNUALLY)
+- `nextPaymentDate` - Next scheduled payment date
+- `noOfSuccessPayments` - Count of successful payments
+- `subscriptionStatusCode` - 1=Active, 2=Completed, 3=Cancelled
+
+**Retry Information (if applicable):**
+
+- `lastPaymentAttempt.isRetried` - Whether this was a retry attempt
+- `lastPaymentAttempt.attemptCount` - Retry attempt number
+- `lastPaymentAttempt.txDateTime` - Transaction timestamp
+- `lastPaymentAttempt.attemptStatus` - Status of this attempt
 
 <hr>
 
@@ -456,6 +569,29 @@ UPPERCASE(SHA512[<merchantKey>|<echeckoutOrderId>|<echeckoutTransactionId>|<eche
     <button onclick="returnForm()" name="btnpay">PAY Now</button>
   </body>
 </html>
+```
+
+##### Sample code for checkValue generation (PHP):
+
+```php
+<?php
+function generateCheckValue($merchantKey, $invoiceId, $amount, $currencyCode, $merchantToken) {
+    // Step 1: Create SHA512 hash of merchantToken and convert to uppercase
+    $tokenHash = strtoupper(hash('sha512', $merchantToken));
+
+    // Step 2: Create the base string with pipe delimiters
+    $baseString = $merchantKey . "|" . $invoiceId . "|" . $amount . "|" . $currencyCode . "|" . $tokenHash;
+
+    // Step 3: Create final SHA512 hash and convert to uppercase
+    $finalHash = strtoupper(hash('sha512', $baseString));
+
+    return $finalHash;
+}
+
+// Example usage
+$checkValue = generateCheckValue("D75XXXXXXXXX", "INV0002301", "999.12", "LKR", "your_secret_merchant_token");
+echo "Generated checkValue: " . $checkValue;
+?>
 ```
 
 eCheckoutLK Payment Gateway Integration
